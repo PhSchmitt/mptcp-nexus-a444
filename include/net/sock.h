@@ -659,6 +659,7 @@ enum sock_flags {
 		     * Will use last 4 bytes of packet sent from
 		     * user-space instead.
 		     */
+	SOCK_MPTCP, /* MPTCP set on this socket */
 };
 
 static inline void sock_copy_flags(struct sock *nsk, struct sock *osk)

@@ -61,6 +61,8 @@ extern void		ip6_dgram_sock_seq_show(struct seq_file *seq,
  *	address family specific functions
  */
 extern const struct inet_connection_sock_af_ops ipv4_specific;
+extern const struct inet_connection_sock_af_ops ipv6_mapped;
+extern const struct inet_connection_sock_af_ops ipv6_specific;
 
 extern void inet6_destroy_sock(struct sock *sk);
 

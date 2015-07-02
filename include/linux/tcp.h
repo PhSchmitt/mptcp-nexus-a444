@@ -552,7 +552,6 @@ struct tcp_sock {
 		request_mptcp:1, /* Did we send out an MP_CAPABLE?
 				  * (this speeds up mptcp_doit() in tcp_recvmsg)
 				  */
-		mptcp_enabled:1, /* Is MPTCP enabled from the application ? */
 		pf:1, /* Potentially Failed state: when this flag is set, we
 		       * stop using the subflow
 		       */
@@ -588,6 +587,7 @@ struct tcp_sock {
 	void (*retransmit_timer)(struct sock *sk);
 	void (*time_wait)(struct sock *sk, int state, int timeo);
 	void (*cleanup_rbuf)(struct sock *sk, int copied);
+	void (*init_congestion_control)(struct sock *sk);
 };
 
 enum tsq_flags {

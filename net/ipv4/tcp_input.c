@@ -339,7 +339,7 @@ static void tcp_grow_window(struct sock *sk, const struct sk_buff *skb)
 
 	/* Check #1 */
 	if (meta_tp->rcv_ssthresh < meta_tp->window_clamp &&
-	    (int)meta_tp->rcv_ssthresh < tcp_space(sk) &&
+	    (int)meta_tp->rcv_ssthresh < tcp_space(meta_sk) &&
 	    !sk_under_memory_pressure(sk)) {
 		int incr;
 
@@ -5407,7 +5407,7 @@ void tcp_finish_connect(struct sock *sk, struct sk_buff *skb)
 
 	tcp_init_metrics(sk);
 
-	tcp_init_congestion_control(sk);
+	tp->init_congestion_control(sk);
 
 	/* Prevent spurious tcp_cwnd_restart() on first data
 	 * packet.
@@ -5856,7 +5856,7 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			synack_stamp = tp->lsndtime;
 			/* Make sure socket is routed, for correct metrics. */
 			icsk->icsk_af_ops->rebuild_header(sk);
-			tcp_init_congestion_control(sk);
+			tp->init_congestion_control(sk);
 
 			tcp_mtup_init(sk);
 			tp->copied_seq = tp->rcv_nxt;

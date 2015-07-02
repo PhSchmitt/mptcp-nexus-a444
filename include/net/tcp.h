@@ -1232,18 +1232,12 @@ static inline bool mptcp(const struct tcp_sock *tp)
 /* Note: caller must be prepared to deal with negative returns */ 
 static inline int tcp_space(const struct sock *sk)
 {
-	if (mptcp(tcp_sk(sk)))
-		sk = tcp_sk(sk)->meta_sk;
-
 	return tcp_win_from_space(sk->sk_rcvbuf -
 				  atomic_read(&sk->sk_rmem_alloc));
 }
 
 static inline int tcp_full_space(const struct sock *sk)
 {
-	if (mptcp(tcp_sk(sk)))
-		sk = tcp_sk(sk)->meta_sk;
-
 	return tcp_win_from_space(sk->sk_rcvbuf); 
 }
 
@@ -1732,7 +1726,11 @@ static inline bool tcp_stream_memory_free(const struct sock *sk)
 	return notsent_bytes < tcp_notsent_lowat(tp);
 }
 
+#if 0
 extern int tcp_nuke_addr(struct net *net, struct sockaddr *addr);
+#else
+#define tcp_nuke_addr(net, addr) 0
+#endif
 
 #ifdef CONFIG_PROC_FS
 int tcp4_proc_init(void);

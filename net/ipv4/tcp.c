@@ -425,8 +425,8 @@ void tcp_init_sock(struct sock *sk)
 	sk->sk_sndbuf = sysctl_tcp_wmem[1];
 	sk->sk_rcvbuf = sysctl_tcp_rmem[1];
 
-	/* Set function pointers in tcp_sock to tcp functions. */
-	mptcp_init_tcp_sock(tp);
+	/* Initialize MPTCP-specific stuff and function-pointers */
+	mptcp_init_tcp_sock(sk);
 
 	local_bh_disable();
 	sock_update_memcg(sk);
@@ -2806,14 +2806,16 @@ static int do_tcp_setsockopt(struct sock *sk, int level,
 		break;
 #ifdef CONFIG_MPTCP
 	case MPTCP_ENABLED:
-		if (sk->sk_state == TCP_CLOSE || sk->sk_state == TCP_LISTEN) {
-			if (val)
-				tp->mptcp_enabled = 1;
-			else
-				tp->mptcp_enabled = 0;
-		} else {
+		if (mptcp_init_failed || !sysctl_mptcp_enabled ||
+		    sk->sk_state != TCP_CLOSE) {
 			err = -EPERM;
+			break;
 		}
+
+		if (val)
+			mptcp_enable_sock(sk);
+		else
+			mptcp_disable_sock(sk);
 		break;
 #endif
 	default:
@@ -3041,7 +3043,7 @@ static int do_tcp_getsockopt(struct sock *sk, int level,
 		break;
 #ifdef CONFIG_MPTCP
 	case MPTCP_ENABLED:
-		val = tp->mptcp_enabled;
+		val = sock_flag(sk, SOCK_MPTCP) ? 1 : 0;
 		break;
 #endif
 	default:
@@ -3621,6 +3623,7 @@ void __init tcp_init(void)
 	tcp_tasklet_init();
 }
 
+#if 0
 static int tcp_is_local(struct net *net, __be32 addr) {
 	struct rtable *rt;
 	struct flowi4 fl4 = { .daddr = addr };
@@ -3733,3 +3736,4 @@ restart:
 
 	return 0;
 }
+#endif

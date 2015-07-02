@@ -456,10 +456,7 @@ static void mptcp_skb_trim_head(struct sk_buff *skb, struct sock *sk, u32 seq)
 	int len = seq - TCP_SKB_CB(skb)->seq;
 	u32 new_seq = TCP_SKB_CB(skb)->seq + len;
 
-	if (len < skb_headlen(skb))
-		__skb_pull(skb, len);
-	else
-		__pskb_trim_head(skb, len - skb_headlen(skb));
+	__pskb_trim_head(skb, len);
 
 	TCP_SKB_CB(skb)->seq = new_seq;
 
@@ -553,6 +550,9 @@ static int mptcp_prevalidate_skb(struct sock *sk, struct sk_buff *skb)
 
 		tp->mpcb->infinite_mapping_snd = 1;
 		tp->mpcb->infinite_mapping_rcv = 1;
+
+		mptcp_sub_force_close_all(tp->mpcb, sk);
+
 		/* We do a seamless fallback and should not send a inf.mapping. */
 		tp->mpcb->send_infinite_mapping = 0;
 		tp->mptcp->fully_established = 1;
@@ -649,6 +649,7 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 
 	if (!data_len) {
 		mpcb->infinite_mapping_rcv = 1;
+		mpcb->send_infinite_mapping = 1;
 		tp->mptcp->fully_established = 1;
 		/* We need to repeat mp_fail's until the sender felt
 		 * back to infinite-mapping - here we stop repeating it.
@@ -659,7 +660,8 @@ static int mptcp_detect_mapping(struct sock *sk, struct sk_buff *skb)
 		data_len = skb->len + (mptcp_is_data_fin(skb) ? 1 : 0);
 		sub_seq = tcb->seq;
 
-		/* TODO kill all other subflows than this one */
+		mptcp_sub_force_close_all(mpcb, sk);
+
 		/* data_seq and so on are set correctly */
 
 		/* At this point, the meta-ofo-queue has to be emptied,
@@ -1577,9 +1579,6 @@ void mptcp_parse_options(const uint8_t *ptr, int opsize,
 			break;
 		}
 
-		if (!sysctl_mptcp_enabled)
-			break;
-
 		/* We only support MPTCP version 0 */
 		if (mpcapable->ver != 0)
 			break;
@@ -1960,8 +1959,6 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 		mptcp->rx_opt.mp_fail = 0;
 
 		if (!th->rst && !mpcb->infinite_mapping_snd) {
-			struct sock *sk_it;
-
 			mpcb->send_infinite_mapping = 1;
 			/* We resend everything that has not been acknowledged */
 			meta_sk->sk_send_head = tcp_write_queue_head(meta_sk);
@@ -1984,18 +1981,13 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 			/* Trigger a sending on the meta. */
 			mptcp_push_pending_frames(meta_sk);
 
-			mptcp_for_each_sk(mpcb, sk_it) {
-				if (sk != sk_it)
-					mptcp_sub_force_close(sk_it);
-			}
+			mptcp_sub_force_close_all(mpcb, sk);
 		}
 
 		return 0;
 	}
 
 	if (unlikely(mptcp->rx_opt.mp_fclose)) {
-		struct sock *sk_it, *tmpsk;
-
 		mptcp->rx_opt.mp_fclose = 0;
 		if (mptcp->rx_opt.mptcp_key != mpcb->mptcp_loc_key)
 			return 0;
@@ -2003,8 +1995,7 @@ static inline int mptcp_mp_fail_rcvd(struct sock *sk, const struct tcphdr *th)
 		if (tcp_need_reset(sk->sk_state))
 			tcp_sk(sk)->send_active_reset(sk, GFP_ATOMIC);
 
-		mptcp_for_each_sk_safe(mpcb, sk_it, tmpsk)
-			mptcp_sub_force_close(sk_it);
+		mptcp_sub_force_close_all(mpcb, NULL);
 
 		tcp_reset(meta_sk);
 
@@ -2243,6 +2234,10 @@ void mptcp_init_buffer_space(struct sock *sk)
 	tcp_init_buffer_space(sk);
 
 	if (is_master_tp(tp)) {
+		meta_tp->rcvq_space.space = meta_tp->rcv_wnd;
+		meta_tp->rcvq_space.time = tcp_time_stamp;
+		meta_tp->rcvq_space.seq = meta_tp->copied_seq;
+
 		/* If there is only one subflow, we just use regular TCP
 		 * autotuning. User-locks are handled already by
 		 * tcp_init_buffer_space
