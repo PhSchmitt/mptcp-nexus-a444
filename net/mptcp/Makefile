@@ -15,6 +15,8 @@ obj-$(CONFIG_MPTCP_FULLMESH) += mptcp_fullmesh.o
 obj-$(CONFIG_MPTCP_NDIFFPORTS) += mptcp_ndiffports.o
 obj-$(CONFIG_MPTCP_BINDER) += mptcp_binder.o
 obj-$(CONFIG_MPTCP_ROUNDROBIN) += mptcp_rr.o
+obj-$(CONFIG_MPTCP_SECSCHED) += mptcp_9010.o
+obj-$(CONFIG_MPTCP_SECSCHED) += mptcp_sockopt.o
 
 mptcp-$(subst m,y,$(CONFIG_IPV6)) += mptcp_ipv6.o
 
