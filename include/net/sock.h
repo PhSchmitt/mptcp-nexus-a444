@@ -826,6 +826,10 @@ extern void sk_stream_kill_queues(struct sock *sk);
 extern int sk_wait_data(struct sock *sk, long *timeo);
 
 /* START - needed for MPTCP */
+
+/* Flag for Technology Hopping */
+extern int isImportantdata;
+
 struct sock *sk_prot_alloc(struct proto *prot, gfp_t priority, int family);
 void sock_lock_init(struct sock *sk);
 

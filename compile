@@ -1,0 +1,9 @@
+#!/bin/bash
+
+export ARCH=arm SUBARCH=arm CROSS_COMPILE=arm-eabi-
+make clean 
+make hammerhead_defconfig 
+make menuconfig 
+make savedefconfig 
+make -j4
+

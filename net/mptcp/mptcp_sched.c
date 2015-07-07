@@ -262,6 +262,7 @@ static struct sock *get_available_subflow(struct sock *meta_sk,
 	return sk;
 }
 
+// TODO: Reinjections occure here - disable for 90/10 and appchoice sched
 static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
 {
 	struct sock *meta_sk;
