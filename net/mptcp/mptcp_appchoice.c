@@ -230,7 +230,7 @@ static struct sock
 				return bestsk;
 		}
 		/* should never be reached */
-		pr_debug("MPTCP-SECSCHED no suitable socket found \n");
+		pr_debug("MPTCP Appchoice Scheduler: no suitable socket found \n");
 		return NULL;
 }
 
