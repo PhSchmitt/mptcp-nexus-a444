@@ -1839,18 +1839,14 @@ SYSCALL_DEFINE5(setsockopt, int, fd, int, level, int, optname,
 			{
 				pr_info("MPTCP Appchoice Scheduler: Urgent option enabled \n");
 				isImportantdata = 1;
-				return 0;
 			}
 			if (0 == optEnabled)
 			{
 				pr_info("MPTCP Appchoice Scheduler:Urgent option disabled \n");
 				isImportantdata = 0;
-				return 0;
 			}
 			else
 				pr_err("MPTCP Appchoice Scheduler:unknown socket option value \n");
-				/* should never be reached - we return a negative value as it is an error */
-				return -20;
 		}
 
 	if (optlen < 0)
