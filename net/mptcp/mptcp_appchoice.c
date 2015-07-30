@@ -14,7 +14,7 @@ static struct appchoice_priv *appchoice_get_priv(const struct tcp_sock *tp)
 {
 	return (struct appchoice_priv *)&tp->mptcp->mptcp_sched[0];
 }
-*/
+ */
 
 static bool mptcp_is_appchoice_unavailable(struct sock *sk)
 {
@@ -37,8 +37,8 @@ static bool mptcp_is_appchoice_unavailable(struct sock *sk)
 }
 
 static bool mptcp_is_tempappchoice_unavailable(struct sock *sk,
-				      const struct sk_buff *skb,
-				      bool zero_wnd_test)
+		const struct sk_buff *skb,
+		bool zero_wnd_test)
 {
 	const struct tcp_sock *tp = tcp_sk(sk);
 	unsigned int mss_now, space, in_flight;
@@ -61,7 +61,7 @@ static bool mptcp_is_tempappchoice_unavailable(struct sock *sk,
 	if (!tp->mptcp->fully_established) {
 		/* Make sure that we send in-order data */
 		if (skb && tp->mptcp->second_packet &&
-		    tp->mptcp->last_end_data_seq != TCP_SKB_CB(skb)->seq)
+				tp->mptcp->last_end_data_seq != TCP_SKB_CB(skb)->seq)
 			return true;
 	}
 
@@ -95,7 +95,7 @@ static bool mptcp_is_tempappchoice_unavailable(struct sock *sk,
 	 * the meta-level).
 	 */
 	if (skb && !zero_wnd_test &&
-	    after(tp->write_seq + min(skb->len, mss_now), tcp_wnd_end(tp)))
+			after(tp->write_seq + min(skb->len, mss_now), tcp_wnd_end(tp)))
 		return true;
 
 	return false;
@@ -103,29 +103,29 @@ static bool mptcp_is_tempappchoice_unavailable(struct sock *sk,
 
 /* Is the sub-socket sk available to send the skb? */
 static bool mptcp_is_appchoice_available(struct sock *sk, const struct sk_buff *skb,
-			       bool zero_wnd_test)
+		bool zero_wnd_test)
 {
 	return !mptcp_is_appchoice_unavailable(sk) &&
-	       !mptcp_is_tempappchoice_unavailable(sk, skb, zero_wnd_test);
+			!mptcp_is_tempappchoice_unavailable(sk, skb, zero_wnd_test);
 }
 
 /* Are we not allowed to reinject this skb on tp? */
-static int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
+static int mptcp_appchoice_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
 {
 	/* If the skb has already been enqueued in this sk, try to find
 	 * another one.
 	 */
 	return skb &&
-		/* Has the skb already been enqueued into this subsocket? */
-		mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask;
+			/* Has the skb already been enqueued into this subsocket? */
+			mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask;
 }
 
-static bool subflow_is_backup(const struct tcp_sock *tp)
+static bool appchoice_subflow_is_backup(const struct tcp_sock *tp)
 {
 	return tp->mptcp->rcv_low_prio || tp->mptcp->low_prio;
 }
 
-static bool subflow_is_active(const struct tcp_sock *tp)
+static bool appchoice_subflow_is_active(const struct tcp_sock *tp)
 {
 	return !tp->mptcp->rcv_low_prio && !tp->mptcp->low_prio;
 }
@@ -134,17 +134,17 @@ static bool subflow_is_active(const struct tcp_sock *tp)
  * best one
  */
 static struct sock
-*get_subflow_from_selectors(struct mptcp_cb *mpcb, struct sk_buff *skb,
-			    bool (*selector)(const struct tcp_sock *),
-			    bool zero_wnd_test, bool *force)
+*get_appchoice_subflow_from_selectors(struct mptcp_cb *mpcb, struct sk_buff *skb,
+		bool (*selector)(const struct tcp_sock *),
+		bool zero_wnd_test, bool *force)
 {
-	struct sock *bestsk = NULL;
-	struct sock *backupsk = NULL;
+	struct sock *fastsk = NULL;
+	struct sock *slowsk = NULL;
 	u32 min_srtt = 0xffffffff;
 	bool found_unused = false;
 	bool found_unused_una = false;
 	struct sock *sk;
-
+	//TODO: maybe delete cong-window etc and only use rtt
 	mptcp_for_each_sk(mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 		bool unused = false;
@@ -153,7 +153,7 @@ static struct sock
 		if (!(*selector)(tp))
 			continue;
 
-		if (!mptcp_dont_reinject_skb(tp, skb))
+		if (!mptcp_appchoice_dont_reinject_skb(tp, skb))
 			unused = true;
 		else if (found_unused)
 			/* If a unused sk was found previously, we continue -
@@ -177,22 +177,28 @@ static struct sock
 				 * have been set to a used sk).
 				 */
 				min_srtt = 0xffffffff;
-				bestsk = NULL;
+				fastsk = NULL;
 			}
 			found_unused = true;
 		}
 
+		/* set current fastsk as slowsk - if there is a faster sk, it doesn't get lost */
+		if (fastsk)
+		{
+			slowsk = fastsk;
+		}
+
 		if (tp->srtt < min_srtt) {
 			min_srtt = tp->srtt;
-			bestsk = sk;
+			fastsk = sk;
 		}
 		else
 		{
-			backupsk = sk;
+			slowsk = sk;
 		}
 	}
 
-	if (bestsk) {
+	if (fastsk) {
 		/* The force variable is used to mark the returned sk as
 		 * previously used or not-used.
 		 */
@@ -211,27 +217,28 @@ static struct sock
 	}
 
 	/* AppChoice Scheduler: use different links according to the flag set in the app
-		 */
-		if (isImportantdata)
-		{
-			pr_debug("MPTCP Appchoice Scheduler: Important data - use backup subflow \n");
-			if (backupsk)
-				return backupsk;
-			else
-				{
-					pr_debug("MPTCP Appchoice SCHEDULER: no backupsk found - use bestsk");
-					return bestsk;
-				}
-		}
+	 */
+	if (isImportantdata)
+	{
+		pr_info("MPTCP Appchoice Scheduler: Important data - use backup subflow \n");
+		if (slowsk)
+			return slowsk;
 		else
 		{
-			pr_debug("MPTCP Appchoice Scheduler: Unimportant data - use fastest subflow \n");
-			if (bestsk)
-				return bestsk;
+			// we have a problem here but don't want to kill the connection
+			pr_info("MPTCP Appchoice SCHEDULER: no slowsk found - use fastsk");
+			return fastsk;
 		}
-		/* should never be reached */
-		pr_debug("MPTCP Appchoice Scheduler: no suitable socket found \n");
-		return NULL;
+	}
+	else
+	{
+		pr_info("MPTCP Appchoice Scheduler: Unimportant data - use fastest subflow \n");
+		if (fastsk)
+			return fastsk;
+	}
+	/* should never be reached */
+	pr_info("MPTCP Appchoice Scheduler: no suitable socket found \n");
+	return NULL;
 }
 
 /* This is the scheduler. This function decides on which flow to send
@@ -242,8 +249,8 @@ static struct sock
  * Additionally, this function is aware of the backup-subflows.
  */
 static struct sock *appchoice_get_available_subflow(struct sock *meta_sk,
-					  struct sk_buff *skb,
-					  bool zero_wnd_test)
+		struct sk_buff *skb,
+		bool zero_wnd_test)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sock *sk;
@@ -260,25 +267,25 @@ static struct sock *appchoice_get_available_subflow(struct sock *meta_sk,
 
 	/* Answer data_fin on same subflow!!! */
 	if (meta_sk->sk_shutdown & RCV_SHUTDOWN &&
-	    skb && mptcp_is_data_fin(skb)) {
+			skb && mptcp_is_data_fin(skb)) {
 		mptcp_for_each_sk(mpcb, sk) {
 			if (tcp_sk(sk)->mptcp->path_index == mpcb->dfin_path_index &&
-			    mptcp_is_appchoice_available(sk, skb, zero_wnd_test))
+					mptcp_is_appchoice_available(sk, skb, zero_wnd_test))
 				return sk;
 		}
 	}
 
 	/* Find the best subflow */
-	sk = get_subflow_from_selectors(mpcb, skb, &subflow_is_active,
-					zero_wnd_test, &force);
+	sk = get_appchoice_subflow_from_selectors(mpcb, skb, &appchoice_subflow_is_active,
+			zero_wnd_test, &force);
 	if (force)
 		/* one unused active sk or one NULL sk when there is at least
 		 * one temporally unavailable unused active sk
 		 */
 		return sk;
 
-	sk = get_subflow_from_selectors(mpcb, skb, &subflow_is_backup,
-					zero_wnd_test, &force);
+	sk = get_appchoice_subflow_from_selectors(mpcb, skb, &appchoice_subflow_is_backup,
+			zero_wnd_test, &force);
 	if (!force)
 		/* one used backup sk or one NULL sk where there is no one
 		 * temporally unavailable unused backup sk
@@ -291,9 +298,9 @@ static struct sock *appchoice_get_available_subflow(struct sock *meta_sk,
 }
 
 /* Reinjections occure here - disable for appchoice scheduler */
-static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
+static struct sk_buff *mptcp_appchoice_rcv_buf_optimization(struct sock *sk, int penal)
 {
-		return NULL;
+	return NULL;
 }
 
 /* Returns the next segment to be sent from the mptcp meta-queue.
@@ -304,7 +311,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
  * and sets it to -1 if it is a meta-level retransmission to optimize the
  * receive-buffer.
  */
-static struct sk_buff *__mptcp_next_segment(struct sock *meta_sk, int *reinject)
+static struct sk_buff *__mptcp_appchoice_next_segment(struct sock *meta_sk, int *reinject)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sk_buff *skb = NULL;
@@ -323,14 +330,14 @@ static struct sk_buff *__mptcp_next_segment(struct sock *meta_sk, int *reinject)
 		skb = tcp_send_head(meta_sk);
 
 		if (!skb && meta_sk->sk_socket &&
-		    test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags) &&
-		    sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
+				test_bit(SOCK_NOSPACE, &meta_sk->sk_socket->flags) &&
+				sk_stream_wspace(meta_sk) < sk_stream_min_wspace(meta_sk)) {
 			struct sock *subsk = appchoice_get_available_subflow(meta_sk, NULL,
-								   false);
+					false);
 			if (!subsk)
 				return NULL;
 
-			skb = mptcp_rcv_buf_optimization(subsk, 0);
+			skb = mptcp_appchoice_rcv_buf_optimization(subsk, 0);
 			if (skb)
 				*reinject = -1;
 		}
@@ -339,11 +346,11 @@ static struct sk_buff *__mptcp_next_segment(struct sock *meta_sk, int *reinject)
 }
 
 static struct sk_buff *appchoice_next_segment(struct sock *meta_sk,
-					  int *reinject,
-					  struct sock **subsk,
-					  unsigned int *limit)
+		int *reinject,
+		struct sock **subsk,
+		unsigned int *limit)
 {
-	struct sk_buff *skb = __mptcp_next_segment(meta_sk, reinject);
+	struct sk_buff *skb = __mptcp_appchoice_next_segment(meta_sk, reinject);
 	unsigned int mss_now;
 	struct tcp_sock *subtp;
 	u16 gso_max_segs;
@@ -363,7 +370,7 @@ static struct sk_buff *appchoice_next_segment(struct sock *meta_sk,
 	mss_now = tcp_current_mss(*subsk);
 
 	if (!*reinject && unlikely(!tcp_snd_wnd_test(tcp_sk(meta_sk), skb, mss_now))) {
-		skb = mptcp_rcv_buf_optimization(*subsk, 1);
+		skb = mptcp_appchoice_rcv_buf_optimization(*subsk, 1);
 		if (skb)
 			*reinject = -1;
 		else
@@ -408,11 +415,11 @@ static void appchoice_init(struct sock *sk)
 }
 
 struct mptcp_sched_ops mptcp_appchoice = {
-	.get_subflow = appchoice_get_available_subflow,
-	.next_segment = appchoice_next_segment,
-	.init = appchoice_init,
-	.name = "appchoice",
-	.owner = THIS_MODULE,
+		.get_subflow = appchoice_get_available_subflow,
+		.next_segment = appchoice_next_segment,
+		.init = appchoice_init,
+		.name = "appchoice",
+		.owner = THIS_MODULE,
 };
 
 static int __init appchoice_register(void)

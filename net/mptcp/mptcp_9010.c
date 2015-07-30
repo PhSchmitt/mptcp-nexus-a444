@@ -110,7 +110,7 @@ static bool mptcp_is_9010_available(struct sock *sk, const struct sk_buff *skb,
 }
 
 /* Are we not allowed to reinject this skb on tp? */
-static int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
+static int mptcp9010_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
 {
 	/* If the skb has already been enqueued in this sk, try to find
 	 * another one.
@@ -120,12 +120,12 @@ static int mptcp_dont_reinject_skb(struct tcp_sock *tp, struct sk_buff *skb)
 		mptcp_pi_to_flag(tp->mptcp->path_index) & TCP_SKB_CB(skb)->path_mask;
 }
 
-static bool subflow_is_backup(const struct tcp_sock *tp)
+static bool subflow_9010is_backup(const struct tcp_sock *tp)
 {
 	return tp->mptcp->rcv_low_prio || tp->mptcp->low_prio;
 }
 
-static bool subflow_is_active(const struct tcp_sock *tp)
+static bool subflow_9010is_active(const struct tcp_sock *tp)
 {
 	return !tp->mptcp->rcv_low_prio && !tp->mptcp->low_prio;
 }
@@ -134,17 +134,17 @@ static bool subflow_is_active(const struct tcp_sock *tp)
  * best one
  */
 static struct sock
-*get_subflow_from_selectors(struct mptcp_cb *mpcb, struct sk_buff *skb,
+*get_9010subflow_from_selectors(struct mptcp_cb *mpcb, struct sk_buff *skb,
 			    bool (*selector)(const struct tcp_sock *),
 			    bool zero_wnd_test, bool *force)
 {
-	struct sock *bestsk = NULL;
-	struct sock *backupsk = NULL;
+	struct sock *fastsk = NULL;
+	struct sock *slowsk = NULL;
 	u32 min_srtt = 0xffffffff;
 	bool found_unused = false;
 	bool found_unused_una = false;
 	struct sock *sk;
-
+//TODO maybe delete all window tests and only use rtt
 	mptcp_for_each_sk(mpcb, sk) {
 		struct tcp_sock *tp = tcp_sk(sk);
 		bool unused = false;
@@ -153,7 +153,7 @@ static struct sock
 		if (!(*selector)(tp))
 			continue;
 
-		if (!mptcp_dont_reinject_skb(tp, skb))
+		if (!mptcp9010_dont_reinject_skb(tp, skb))
 			unused = true;
 		else if (found_unused)
 			/* If a unused sk was found previously, we continue -
@@ -177,22 +177,28 @@ static struct sock
 				 * have been set to a used sk).
 				 */
 				min_srtt = 0xffffffff;
-				bestsk = NULL;
+				fastsk = NULL;
 			}
 			found_unused = true;
 		}
 
+		/* set current fastsk as slowsk - if there is a faster sk, it doesn't get lost */
+		if (fastsk)
+			{
+				slowsk = fastsk;
+			}
+
 		if (tp->srtt < min_srtt) {
 			min_srtt = tp->srtt;
-			bestsk = sk;
+			fastsk = sk;
 		}
 		else
 		{
-			backupsk = sk;
+			slowsk = sk;
 		}
 	}
 
-	if (bestsk) {
+	if (fastsk) {
 		/* The force variable is used to mark the returned sk as
 		 * previously used or not-used.
 		 */
@@ -213,25 +219,26 @@ static struct sock
 	/* 90/10 Scheduler: Ensure, that every 10th packet doesn't use the fastest subflow */
 	if (0 != pkt_nr%10)
 	{
-		pr_debug("MPTCP 90/10 SCHEDULER: pkt-nr= %i use fastest subflow \n",pkt_nr);
+		pr_info("MPTCP 90/10 SCHEDULER: pkt-nr= %i use fastest subflow \n",pkt_nr);
 		pkt_nr++;
-		if (bestsk)
-			return bestsk;
+		if (fastsk)
+			return fastsk;
 	}
 	else
 	{
-		pr_debug("MPTCP 90/10 SCHEDULER: pkt-nr= %i use backup subflow \n",pkt_nr);
+		pr_info("MPTCP 90/10 SCHEDULER: pkt-nr= %i use backup subflow \n",pkt_nr);
 		pkt_nr++;
-		if (backupsk)
-			return backupsk;
+		if (slowsk)
+			return slowsk;
 		else
 		{
-			pr_debug("MPTCP 90/10 SCHEDULER: no backupsk found - use bestsk");
-			return bestsk;
+			/* we might have a problem but won't kill the connection */
+			pr_info("MPTCP 90/10 SCHEDULER: no slowsk found - use fastsk");
+			return fastsk;
 		}
 	}
 	/* should never be reached */
-	pr_debug("MPTCP 90/10 SCHEDULER: no suitable socket found \n");
+	pr_info("MPTCP 90/10 SCHEDULER: no suitable socket found \n");
 	return NULL;
 }
 
@@ -252,7 +259,7 @@ static struct sock *sched9010_get_available_subflow(struct sock *meta_sk,
 
 	/* if there is only one subflow, bypass the scheduling function */
 	if (mpcb->cnt_subflows == 1) {
-		pr_debug("MPTCP 90/10 SCHEDULER: only one path available - bypass scheduling \n");
+		pr_info("MPTCP 90/10 SCHEDULER: only one path available - bypass scheduling \n");
 		sk = (struct sock *)mpcb->connection_list;
 		if (!mptcp_is_9010_available(sk, skb, zero_wnd_test))
 			sk = NULL;
@@ -270,7 +277,7 @@ static struct sock *sched9010_get_available_subflow(struct sock *meta_sk,
 	}
 
 	/* Find the best subflow */
-	sk = get_subflow_from_selectors(mpcb, skb, &subflow_is_active,
+	sk = get_9010subflow_from_selectors(mpcb, skb, &subflow_9010is_active,
 					zero_wnd_test, &force);
 	if (force)
 		/* one unused active sk or one NULL sk when there is at least
@@ -278,7 +285,7 @@ static struct sock *sched9010_get_available_subflow(struct sock *meta_sk,
 		 */
 		return sk;
 
-	sk = get_subflow_from_selectors(mpcb, skb, &subflow_is_backup,
+	sk = get_9010subflow_from_selectors(mpcb, skb, &subflow_9010is_backup,
 					zero_wnd_test, &force);
 	if (!force)
 		/* one used backup sk or one NULL sk where there is no one
@@ -292,7 +299,7 @@ static struct sock *sched9010_get_available_subflow(struct sock *meta_sk,
 }
 
 /* Reinjections occure here - disable for 90/10 scheduler */
-static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
+static struct sk_buff *mptcp9010_rcv_buf_optimization(struct sock *sk, int penal)
 {
 		return NULL;
 }
@@ -305,7 +312,7 @@ static struct sk_buff *mptcp_rcv_buf_optimization(struct sock *sk, int penal)
  * and sets it to -1 if it is a meta-level retransmission to optimize the
  * receive-buffer.
  */
-static struct sk_buff *__mptcp_next_segment(struct sock *meta_sk, int *reinject)
+static struct sk_buff *__mptcp9010_next_segment(struct sock *meta_sk, int *reinject)
 {
 	struct mptcp_cb *mpcb = tcp_sk(meta_sk)->mpcb;
 	struct sk_buff *skb = NULL;
@@ -331,7 +338,7 @@ static struct sk_buff *__mptcp_next_segment(struct sock *meta_sk, int *reinject)
 			if (!subsk)
 				return NULL;
 
-			skb = mptcp_rcv_buf_optimization(subsk, 0);
+			skb = mptcp9010_rcv_buf_optimization(subsk, 0);
 			if (skb)
 				*reinject = -1;
 		}
@@ -344,7 +351,7 @@ static struct sk_buff *sched9010_next_segment(struct sock *meta_sk,
 					  struct sock **subsk,
 					  unsigned int *limit)
 {
-	struct sk_buff *skb = __mptcp_next_segment(meta_sk, reinject);
+	struct sk_buff *skb = __mptcp9010_next_segment(meta_sk, reinject);
 	unsigned int mss_now;
 	struct tcp_sock *subtp;
 	u16 gso_max_segs;
@@ -364,7 +371,7 @@ static struct sk_buff *sched9010_next_segment(struct sock *meta_sk,
 	mss_now = tcp_current_mss(*subsk);
 
 	if (!*reinject && unlikely(!tcp_snd_wnd_test(tcp_sk(meta_sk), skb, mss_now))) {
-		skb = mptcp_rcv_buf_optimization(*subsk, 1);
+		skb = mptcp9010_rcv_buf_optimization(*subsk, 1);
 		if (skb)
 			*reinject = -1;
 		else
