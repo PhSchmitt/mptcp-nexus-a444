@@ -2479,8 +2479,20 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 				struct tcp_sock *tp = tcp_sk(sk);
 				struct sock *sk = (struct sock *) tp;
 				struct inet_sock *isk_tmp = inet_sk(sk);
-//TODO make IP/port human readable
-				seq_printf(seq, "%15llu%15llu%15u%15u%15u%15u%15u  %#x    %08X:%04X   %08X:%04X\n",
+				//ps  human readable output for Source and Destination IP and Port
+//				char *srcIPportHuman = (isk_tmp->inet_rcv_saddr & 0xF) +
+//				"." + ((isk_tmp->inet_rcv_saddr & 0xF0)>>8) +
+//				"." + ((isk_tmp->inet_rcv_saddr & 0xF00)>>16) +
+//				"." + ((isk_tmp->inet_rcv_saddr & 0xF000)>>24) +
+//				":" + ntohs(isk_tmp->inet_sport);
+//
+//				char *dstIPportHuman = (isk_tmp->inet_daddr & 0xF) +
+//				"." + ((isk_tmp->inet_daddr & 0xF0)>>8) +
+//				"." + ((isk_tmp->inet_daddr & 0xF00)>>16) +
+//				"." + ((isk_tmp->inet_daddr & 0xF000)>>24) +
+//				":" + ntohs(isk_tmp->inet_dport);
+
+				seq_printf(seq, "%15llu%15llu%15u%15u%15u%15u%15u  %#x    %i.%i.%i.%i:%i    %i.%i.%i.%i:%i\n",
 						tp->mptcp->bytes_snd,
 						tp->mptcp->bytes_rcv,
 						tp->srtt, tp->mdev,
@@ -2488,10 +2500,17 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 						tp->retrans_out,
 						tp->snd_cwnd,
 						(unsigned int) tp,
-						isk_tmp->inet_rcv_saddr,
+						isk_tmp->inet_rcv_saddr & 0x000000FF,
+						(isk_tmp->inet_rcv_saddr & 0x0000FF00)>>8,
+						(isk_tmp->inet_rcv_saddr & 0x00FF0000)>>16,
+						(isk_tmp->inet_rcv_saddr & 0xFF000000)>>24,
 						ntohs(isk_tmp->inet_sport),
-						isk_tmp->inet_daddr,
-						ntohs(isk_tmp->inet_dport));
+						isk_tmp->inet_daddr & 0x000000FF,
+						(isk_tmp->inet_daddr & 0x0000FF00)>>8,
+						(isk_tmp->inet_daddr & 0x00FF0000)>>16,
+						(isk_tmp->inet_daddr & 0xFF000000)>>24,
+						ntohs(isk_tmp->inet_dport)
+						);
 			}
 		}
 		rcu_read_unlock_bh();
