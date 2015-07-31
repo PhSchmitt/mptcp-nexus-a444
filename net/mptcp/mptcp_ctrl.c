@@ -2479,18 +2479,6 @@ static int mptcp_pm_seq_show(struct seq_file *seq, void *v)
 				struct tcp_sock *tp = tcp_sk(sk);
 				struct sock *sk = (struct sock *) tp;
 				struct inet_sock *isk_tmp = inet_sk(sk);
-				//ps  human readable output for Source and Destination IP and Port
-//				char *srcIPportHuman = (isk_tmp->inet_rcv_saddr & 0xF) +
-//				"." + ((isk_tmp->inet_rcv_saddr & 0xF0)>>8) +
-//				"." + ((isk_tmp->inet_rcv_saddr & 0xF00)>>16) +
-//				"." + ((isk_tmp->inet_rcv_saddr & 0xF000)>>24) +
-//				":" + ntohs(isk_tmp->inet_sport);
-//
-//				char *dstIPportHuman = (isk_tmp->inet_daddr & 0xF) +
-//				"." + ((isk_tmp->inet_daddr & 0xF0)>>8) +
-//				"." + ((isk_tmp->inet_daddr & 0xF00)>>16) +
-//				"." + ((isk_tmp->inet_daddr & 0xF000)>>24) +
-//				":" + ntohs(isk_tmp->inet_dport);
 
 				seq_printf(seq, "%15llu%15llu%15u%15u%15u%15u%15u  %#x    %i.%i.%i.%i:%i    %i.%i.%i.%i:%i\n",
 						tp->mptcp->bytes_snd,
