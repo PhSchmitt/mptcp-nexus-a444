@@ -1808,46 +1808,11 @@ asmlinkage long sys_recv(int fd, void __user *ubuf, size_t size,
  *	to pass the user mode parameter for the protocols to sort out.
  */
 
-const int importantFlagName = SO_OOBINLINE;
-int isImportantdata = 0;
-
-/* since stdlib is not supported, we need our own atoi
- * source: http://www.geeksforgeeks.org/write-your-own-atoi/ */
-static inline int myAtoi(char *str)
-{
-    int i, res = 0; // Initialize result
-
-    // Iterate through all characters of input string and update result
-    for (i = 0; str[i] != '\0'; ++i)
-        res = res*10 + str[i] - '0';
-
-    // return result.
-    return res;
-}
-
 SYSCALL_DEFINE5(setsockopt, int, fd, int, level, int, optname,
 		char __user *, optval, int, optlen)
 {
 	int err, fput_needed;
 	struct socket *sock;
-
-	if (importantFlagName == optname)
-		{
-			int optEnabled = myAtoi(optval);
-			pr_info("MPTCP Appchoice Scheduler: Urgent option found \n");
-			if (0 != optEnabled)
-			{
-				pr_info("MPTCP Appchoice Scheduler: Urgent option enabled \n");
-				isImportantdata = 1;
-			}
-			if (0 == optEnabled)
-			{
-				pr_info("MPTCP Appchoice Scheduler:Urgent option disabled \n");
-				isImportantdata = 0;
-			}
-			else
-				pr_err("MPTCP Appchoice Scheduler:unknown socket option value \n");
-		}
 
 	if (optlen < 0)
 		return -EINVAL;
